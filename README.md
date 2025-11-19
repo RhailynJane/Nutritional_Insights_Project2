@@ -84,6 +84,68 @@ CSV Path: <path-to-csv>
 - The dashboard will automatically connect to the backend and load data from the CSV
 - All charts, filters, and API buttons will work with real-time data
 
+## Dev Mode (.env) and One-Command Start
+
+You can configure host/port and CSV path via a `.env` file in the project root.
+
+1) Copy example and adjust as needed:
+
+```powershell
+Copy-Item .env.example .env
+# then edit .env
+```
+
+Supported variables:
+
+- `FLASK_ENV` or `FLASK_DEBUG=1`
+- `HOST` (default `127.0.0.1`)
+- `PORT` (default `5000`)
+- `CSV_PATH` (default `All_Diets.csv`)
+
+2) Start everything and open the UI with one command:
+
+```powershell
+./dev.ps1
+```
+
+`dev.ps1` will:
+- Load `.env`
+- Start the backend if not already running
+- Wait until `/api/health` returns 200
+- Open `project2ui.html` in your default browser
+
+## Verify Locally (PowerShell)
+
+After starting the backend, you can verify endpoints quickly:
+
+```powershell
+# Health check
+Invoke-WebRequest -Uri "http://127.0.0.1:5000/api/health" -UseBasicParsing |
+  Select-Object StatusCode
+
+# Nutrition summary (show totals only)
+(Invoke-WebRequest -Uri "http://127.0.0.1:5000/api/nutrition/summary" -UseBasicParsing).Content |
+  ConvertFrom-Json | Select-Object status,total_records,diet_types
+
+# Top protein recipes (first 5)
+(Invoke-WebRequest -Uri "http://127.0.0.1:5000/api/recipes/top-protein?limit=5" -UseBasicParsing).Content |
+  ConvertFrom-Json | Select-Object status,count
+
+# Recipe statistics
+(Invoke-WebRequest -Uri "http://127.0.0.1:5000/api/recipes" -UseBasicParsing).Content |
+  ConvertFrom-Json | Select-Object status,@{n='total_recipes';e={$_.statistics.total_recipes}}
+
+# Clusters
+(Invoke-WebRequest -Uri "http://127.0.0.1:5000/api/clusters" -UseBasicParsing).Content |
+  ConvertFrom-Json | Select-Object status,clusters_identified
+```
+
+Open the UI directly from PowerShell:
+
+```powershell
+Start-Process .\project2ui.html
+```
+
 ## API Endpoints
 
 The backend provides the following REST API endpoints:

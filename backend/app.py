@@ -1,6 +1,23 @@
 """
 Nutritional Insights Backend API
-Flask server that provides REST endpoints for nutritional data from CSV
+--------------------------------
+
+A minimal Flask server that exposes REST endpoints backed by a CSV file
+(`All_Diets.csv`) to provide aggregated nutrition insights and basic
+exploratory data APIs used by the frontend dashboard.
+
+Key responsibilities
+- Load the nutrition dataset from disk (via pandas) on-demand per request
+- Provide summarized macronutrients by diet type
+- Return top protein-rich recipes (for scatter plot)
+- Offer simple cluster-like groupings (demo) based on macronutrient profiles
+- Support pagination for accessing raw/complete data
+
+Notes
+- This service keeps state out of memory; each request reads the CSV. For
+    higher throughput, consider caching the loaded DataFrame (with invalidation)
+    or persisting to a database.
+- All endpoints return JSON with a consistent `status` field on success.
 """
 
 import os
@@ -9,15 +26,33 @@ from flask_cors import CORS
 import pandas as pd
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend access
+# Enable CORS so the browser can call this API from the frontend served as a
+# static file (e.g., opened directly in a browser) without same-origin issues.
+CORS(app)
 
-# Path to CSV file
-CSV_PATH = os.path.join(
+# Path to the source CSV file. Prefer an environment override via `CSV_PATH`;
+# otherwise, resolve relative to this file so the backend can be started from
+# the project root or the `backend/` directory.
+CSV_PATH = os.getenv('CSV_PATH') or os.path.join(
     os.path.dirname(__file__), '..', 'All_Diets.csv'
 )
 
 def load_nutrition_data():
-    """Load and process nutrition data from CSV"""
+    """Load the nutrition dataset from the CSV into a pandas DataFrame.
+
+    Expected CSV columns (minimum):
+    - 'Diet_type' (str): diet category label
+    - 'Recipe_name' (str): recipe title/name
+    - 'Protein(g)' (float): protein content in grams
+    - 'Carbs(g)' (float): carbs content in grams
+    - 'Fat(g)' (float): fat content in grams
+
+    Returns
+    -------
+    pandas.DataFrame | None
+        The loaded DataFrame on success, or None if the file is missing or
+        unreadable (e.g., empty or malformed).
+    """
     try:
         df = pd.read_csv(CSV_PATH)
         return df
@@ -26,7 +61,19 @@ def load_nutrition_data():
         return None
 
 def calculate_diet_summary(df):
-    """Calculate average macronutrients and recipe counts by diet type"""
+    """Calculate average macronutrients and recipe counts by diet type.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        The full dataset loaded from the CSV.
+
+    Returns
+    -------
+    list[dict]
+        Records shaped for the frontend:
+        [{ 'Diet_type': str, 'Protein': float, 'Carbs': float, 'Fat': float, 'recipes': int }]
+    """
     summary = df.groupby('Diet_type').agg({
         'Protein(g)': 'mean',
         'Carbs(g)': 'mean',
@@ -39,7 +86,20 @@ def calculate_diet_summary(df):
     return summary.to_dict('records')
 
 def get_top_protein_recipes(df, limit=5):
-    """Get top protein-rich recipes"""
+    """Return the top-N protein-rich recipes for scatter plotting.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        The full dataset.
+    limit : int, optional
+        Number of top recipes to return (default 5).
+
+    Returns
+    -------
+    list[dict]
+        [{ 'recipe': str, 'protein': float, 'carbs': float }]
+    """
     cols = ['Recipe_name', 'Protein(g)', 'Carbs(g)']
     top_recipes = df.nlargest(limit, 'Protein(g)')[cols]
 
@@ -55,7 +115,7 @@ def get_top_protein_recipes(df, limit=5):
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Lightweight health probe to verify the API is responsive."""
     return jsonify({
         'status': 'healthy',
         'message': 'Nutritional Insights API is running'
@@ -63,7 +123,26 @@ def health_check():
 
 @app.route('/api/nutrition/summary', methods=['GET'])
 def get_nutrition_summary():
-    """Get aggregated nutrition data by diet type"""
+    """Get aggregated macronutrient means and counts by diet type.
+
+    Response shape
+    --------------
+    {
+        'status': 'success',
+        'total_records': int,
+        'diet_types': int,
+        'data': [
+            {
+                'Diet_type': str,
+                'Protein': float,
+                'Carbs': float,
+                'Fat': float,
+                'recipes': int
+            },
+            ...
+        ]
+    }
+    """
     df = load_nutrition_data()
 
     if df is None:
@@ -80,7 +159,12 @@ def get_nutrition_summary():
 
 @app.route('/api/recipes/top-protein', methods=['GET'])
 def get_top_protein():
-    """Get top protein-rich recipes"""
+    """Get top protein-rich recipes.
+
+    Query params
+    ------------
+    - limit: int (optional, default=5) number of recipes to return
+    """
     limit = request.args.get('limit', default=5, type=int)
 
     df = load_nutrition_data()
@@ -98,7 +182,24 @@ def get_top_protein():
 
 @app.route('/api/recipes', methods=['GET'])
 def get_recipes():
-    """Get all recipes with optional filtering"""
+    """Return recipe statistics with optional diet-type filtering.
+
+    Query params
+    ------------
+    - diet_type: str (optional) exact diet type label to filter by
+
+    Response shape
+    --------------
+    {
+        'status': 'success',
+        'statistics': {
+            'total_recipes': int,
+            'avg_protein': float,
+            'avg_carbs': float,
+            'avg_fat': float
+        }
+    }
+    """
     df = load_nutrition_data()
 
     if df is None:
@@ -124,7 +225,14 @@ def get_recipes():
 
 @app.route('/api/clusters', methods=['GET'])
 def get_clusters():
-    """Get cluster analysis of diet types"""
+    """Return a simple, heuristic "cluster" grouping of diet types.
+
+    This is a demonstration-only feature that partitions diet types into
+    three buckets using fixed thresholds on mean macronutrient values:
+    - high_protein: Protein > 90 g
+    - high_carb:    Carbs > 200 g
+    - balanced:     everything else
+    """
     df = load_nutrition_data()
 
     if df is None:
@@ -151,7 +259,24 @@ def get_clusters():
 
 @app.route('/api/nutrition/all', methods=['GET'])
 def get_all_data():
-    """Get complete nutrition dataset with pagination"""
+    """Return the complete dataset (raw rows) with server-side pagination.
+
+    Query params
+    ------------
+    - page: int (default=1)     1-based page number
+    - per_page: int (default=50) number of rows per page
+
+    Response shape
+    --------------
+    {
+        'status': 'success',
+        'page': int,
+        'per_page': int,
+        'total_records': int,
+        'total_pages': int,
+        'data': [ {row...}, ... ]
+    }
+    """
     df = load_nutrition_data()
 
     if df is None:
@@ -186,5 +311,16 @@ if __name__ == '__main__':
     print(f"CSV Path: {CSV_PATH}")
     # Use environment variable to control debug mode
     # For production, set FLASK_ENV=production
-    debug_mode = os.getenv('FLASK_ENV', 'development') == 'development'
-    app.run(debug=debug_mode, host='127.0.0.1', port=5000)
+    debug_mode = (
+        os.getenv('FLASK_DEBUG', '0') == '1' or
+        os.getenv('FLASK_ENV', 'development') == 'development'
+    )
+
+    host = os.getenv('HOST', '127.0.0.1')
+    try:
+        port = int(os.getenv('PORT', '5000'))
+    except ValueError:
+        print("Invalid PORT in environment; defaulting to 5000")
+        port = 5000
+
+    app.run(debug=debug_mode, host=host, port=port)

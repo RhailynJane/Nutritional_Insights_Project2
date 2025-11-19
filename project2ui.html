@@ -208,9 +208,13 @@
 
     <script>
         // API Configuration
+        // Base URL for the Flask backend. If you change the backend host/port,
+        // update this constant. All fetch calls below are composed from this.
         const API_BASE_URL = 'http://127.0.0.1:5000/api';
 
         // Data will be loaded from backend
+        // These arrays are populated by loadDataFromBackend() and then
+        // used by charts, filters, and the table renderer.
         let dietTypesData = [];
         let topProteinRecipes = [];
 
@@ -220,13 +224,23 @@
         const itemsPerPage = 3;
 
         // Load data from backend on page load
+        // Load initial datasets required by the page:
+        // 1) nutrition summary by diet (bar + pie charts + table)
+        // 2) top-protein recipes (scatter plot)
+        /**
+         * Load initial datasets required by the dashboard and render charts/table.
+         * Fetches nutrition summary and top-protein recipes from the backend API.
+         * @returns {Promise<void>}
+         */
         async function loadDataFromBackend() {
             try {
                 // Fetch nutrition summary
+                // Shape (success): { status, total_records, diet_types, data: [...] }
                 const summaryResponse = await fetch(`${API_BASE_URL}/nutrition/summary`);
                 const summaryData = await summaryResponse.json();
                 
                 if (summaryData.status === 'success') {
+                    // Normalize local state and render charts/table
                     dietTypesData = summaryData.data;
                     filteredData = [...dietTypesData];
                     
@@ -236,6 +250,7 @@
                 }
 
                 // Fetch top protein recipes
+                // Shape (success): { status, count, data: [{recipe, protein, carbs}, ...] }
                 const proteinResponse = await fetch(`${API_BASE_URL}/recipes/top-protein?limit=5`);
                 const proteinData = await proteinResponse.json();
                 
@@ -249,6 +264,11 @@
             }
         }
 
+        // Render a prominent error box in the API response area.
+        /**
+         * Show a prominent error message in the API response panel.
+         * @param {string} message - Human-readable error details to display.
+         */
         function showError(message) {
             const response = document.getElementById('apiResponse');
             response.classList.remove('hidden');
@@ -262,6 +282,7 @@
         }
 
         // Bar Chart - Average Macronutrients
+        // Initializes an empty chart; datasets are populated via updateCharts().
         const barCtx = document.getElementById('barChart').getContext('2d');
         let barChart = new Chart(barCtx, {
             type: 'bar',
@@ -289,12 +310,13 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 scales: {
-                    y: { beginAtZero: true }
+                    y: { beginAtZero: true } // keep Y-axis starting at 0 for clarity
                 }
             }
         });
 
         // Scatter Plot - Protein vs Carbs
+        // Filled later by updateScatterPlot() from topProteinRecipes.
         const scatterCtx = document.getElementById('scatterPlot').getContext('2d');
         let scatterChart = new Chart(scatterCtx, {
             type: 'scatter',
@@ -319,12 +341,18 @@
             }
         });
 
+        // Push points into the scatter dataset and trigger a redraw.
+        /**
+         * Refresh the scatter plot with current `topProteinRecipes` data.
+         * @returns {void}
+         */
         function updateScatterPlot() {
             scatterChart.data.datasets[0].data = topProteinRecipes.map(r => ({ x: r.protein, y: r.carbs }));
             scatterChart.update();
         }
 
         // Pie Chart - Recipe Distribution
+        // Labels and counts are derived from the current (filtered) diet types.
         const pieCtx = document.getElementById('pieChart').getContext('2d');
         let pieChart = new Chart(pieCtx, {
             type: 'pie',
@@ -342,6 +370,13 @@
         });
 
         // API Interaction Functions
+        // These functions call the backend endpoints on-demand and display
+        // a summary of the result in the green API response panel.
+        /**
+         * Fetch and display the nutrition summary in the API response panel.
+         * Also shows client-side timing for reference.
+         * @returns {Promise<void>}
+         */
         async function getNutritionalInsights() {
             const response = document.getElementById('apiResponse');
             response.classList.remove('hidden');
@@ -369,6 +404,10 @@
             }
         }
 
+        /**
+         * Fetch and display recipe statistics (optionally filtered by diet type).
+         * @returns {Promise<void>}
+         */
         async function getRecipes() {
             const response = document.getElementById('apiResponse');
             response.classList.remove('hidden');
@@ -397,6 +436,10 @@
             }
         }
 
+        /**
+         * Fetch and display simple macronutrient-based cluster groupings.
+         * @returns {Promise<void>}
+         */
         async function getClusters() {
             const response = document.getElementById('apiResponse');
             response.classList.remove('hidden');
@@ -426,6 +469,12 @@
         }
 
         // Update charts based on filtered data
+        // This rebinds labels and dataset values for both the bar and pie charts.
+        /**
+         * Update the bar and pie charts with a filtered dataset.
+         * @param {Array<{Diet_type:string,Protein:number,Carbs:number,Fat:number,recipes:number}>} data
+         * @returns {void}
+         */
         function updateCharts(data) {
             // Update bar chart
             barChart.data.labels = data.map(d => d.Diet_type);
@@ -444,6 +493,11 @@
         document.getElementById('searchInput').addEventListener('input', filterData);
         document.getElementById('dietSelect').addEventListener('change', filterData);
 
+        // Filter table + charts whenever search input or diet dropdown changes.
+        /**
+         * Filter `dietTypesData` by search term and selected diet; refresh UI.
+         * @returns {void}
+         */
         function filterData() {
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
             const selectedDiet = document.getElementById('dietSelect').value;
@@ -464,6 +518,11 @@
         }
 
         // Render table with pagination
+        // Slices the filtered data for the current page and builds table rows.
+        /**
+         * Render the paginated table for the current page of `filteredData`.
+         * @returns {void}
+         */
         function renderTable() {
             const tableBody = document.getElementById('dataTableBody');
             const startIndex = (currentPage - 1) * itemsPerPage;
@@ -490,6 +549,11 @@
         }
 
         // Render pagination controls
+        // Generates Previous / page numbers / Next buttons, wired to update the table.
+        /**
+         * Render pagination controls and wire them to update the current page.
+         * @returns {void}
+         */
         function renderPagination() {
             const paginationControls = document.getElementById('paginationControls');
             const totalPages = Math.ceil(filteredData.length / itemsPerPage);
@@ -536,6 +600,7 @@
         }
 
         // Initialize data and table on page load
+        // On DOM ready, fetch initial datasets and render.
         document.addEventListener('DOMContentLoaded', () => {
             loadDataFromBackend();
         });
