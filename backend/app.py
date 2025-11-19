@@ -316,11 +316,11 @@ if __name__ == '__main__':
         os.getenv('FLASK_ENV', 'development') == 'development'
     )
 
-    host = os.getenv('HOST', '127.0.0.1')
+    HOST_BIND = os.getenv('HOST', '127.0.0.1')
     try:
-        port = int(os.getenv('PORT', '5000'))
+        PORT = int(os.getenv('PORT', '5000'))
     except ValueError:
         print("Invalid PORT in environment; defaulting to 5000")
-        port = 5000
+        PORT = 5000
 
-    app.run(debug=debug_mode, host=host, port=port)
+    app.run(debug=debug_mode, host=HOST_BIND, port=PORT)
